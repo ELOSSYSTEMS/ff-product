@@ -18,6 +18,7 @@ import {
 } from "./gemini-client.mjs";
 import {
   executeProductWorkflow,
+  fetchActiveProductsByCollectionHandles,
   fetchProductByReference,
   fetchWorkflowNamingContext,
   normalizeDraftInput
@@ -35,6 +36,7 @@ const generatedRoot = process.env.FF_PRODUCT_GENERATED_ROOT
 const MAX_SOURCE_IMAGES = 6;
 const MAX_IMAGE_GENERATION_ATTEMPTS = 3;
 const MAX_BULK_PRODUCTS = 5;
+const MAX_BULK_SIZE_GUIDE_PRODUCTS = 40;
 const DEFAULT_COPY_PROVIDER = "openai";
 const DEFAULT_IMAGE_PROVIDER = "gemini";
 const IMAGE_PROVIDERS = new Set([DEFAULT_IMAGE_PROVIDER]);
@@ -79,6 +81,31 @@ function parseBulkProductReferences(rawValue) {
     .filter(Boolean);
 }
 
+function parseCollectionHandles(rawValue) {
+  return String(rawValue ?? "")
+    .split(/\r?\n|,/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      try {
+        const parsed = new URL(value);
+        const collectionMatch = parsed.pathname.match(/\/collections\/([^/?#]+)/i);
+        if (collectionMatch?.[1]) {
+          return decodeURIComponent(collectionMatch[1]).trim();
+        }
+      } catch {
+        // Not a URL; treat as a raw collection handle.
+      }
+
+      return value
+        .replace(/^https?:\/\/[^/]+\/collections\//i, "")
+        .replace(/^\/+|\/+$/g, "")
+        .split(/[/?#]/)[0]
+        .trim();
+    })
+    .filter(Boolean);
+}
+
 function validateCoreInput(body, files) {
   const mode = String(body.mode ?? "new").trim().toLowerCase();
   const existingProductReference = String(
@@ -86,6 +113,9 @@ function validateCoreInput(body, files) {
   ).trim();
   const bulkExistingProductReferences = parseBulkProductReferences(
     body.bulkExistingProductReferences ?? ""
+  );
+  const bulkCollectionHandles = parseCollectionHandles(
+    body.bulkCollectionHandles ?? ""
   );
   const kind = String(body.kind ?? "").trim().toLowerCase();
   const rawPrice = String(body.price ?? "").trim();
@@ -95,7 +125,9 @@ function validateCoreInput(body, files) {
   const heightCm = rawHeight === "" ? null : Number(rawHeight);
   const widthCm = rawWidth === "" ? null : Number(rawWidth);
   const copyProviders =
-    mode === "bulk-existing-image-append" ? [] : [DEFAULT_COPY_PROVIDER];
+    ["bulk-existing-image-append", "bulk-collection-size-guides"].includes(mode)
+      ? []
+      : [DEFAULT_COPY_PROVIDER];
   const imageProviders = [DEFAULT_IMAGE_PROVIDER];
   const imageRatio = String(body.imageRatio ?? "3:2").trim();
   const newProductStatus = String(body.newProductStatus ?? "DRAFT")
@@ -108,11 +140,12 @@ function validateCoreInput(body, files) {
       "existing-append",
       "existing-duplicate",
       "bulk-existing-duplicate",
-      "bulk-existing-image-append"
+      "bulk-existing-image-append",
+      "bulk-collection-size-guides"
     ].includes(mode)
   ) {
     throw new Error(
-      "mode must be 'new', 'existing-append', 'existing-duplicate', 'bulk-existing-duplicate', or 'bulk-existing-image-append'."
+      "mode must be 'new', 'existing-append', 'existing-duplicate', 'bulk-existing-duplicate', 'bulk-existing-image-append', or 'bulk-collection-size-guides'."
     );
   }
 
@@ -155,6 +188,16 @@ function validateCoreInput(body, files) {
     }
   }
 
+  if (mode === "bulk-collection-size-guides") {
+    if (!bulkCollectionHandles.length) {
+      throw new Error("Enter one or two collection handles for bulk size-guide mode.");
+    }
+
+    if (bulkCollectionHandles.length > 2) {
+      throw new Error("Bulk size-guide mode supports at most 2 collections per run.");
+    }
+  }
+
   if (
     mode === "new" &&
     (!files?.length || files.length < 1 || files.length > MAX_SOURCE_IMAGES)
@@ -177,6 +220,7 @@ function validateCoreInput(body, files) {
     mode,
     existingProductReference,
     bulkExistingProductReferences,
+    bulkCollectionHandles,
     kind: kind || null,
     copyProviders: [...new Set(copyProviders)],
     imageProviders: [...new Set(imageProviders)],
@@ -341,6 +385,24 @@ function hydrateInputFromExistingProduct(input, existingProduct) {
     widthCm,
     price: input.price,
     variantSizeOptions: extractVariantSizeOptions(existingProduct)
+  };
+}
+
+function hydrateSizeGuideInputFromExistingProduct(input, existingProduct) {
+  const heightCm = Number(getExistingCustomMetafield(existingProduct, "height"));
+  const widthCm = Number(getExistingCustomMetafield(existingProduct, "width"));
+
+  if (!Number.isInteger(heightCm) || !Number.isInteger(widthCm)) {
+    throw new Error(
+      "Existing product is missing usable custom.height/custom.width metafields."
+    );
+  }
+
+  return {
+    ...input,
+    heightCm,
+    widthCm,
+    imageRatio: "1:1"
   };
 }
 
@@ -532,6 +594,77 @@ function buildCleanSizeGuidePrompt(baseRules, { heightCm, widthCm }) {
   ].join(" ");
 }
 
+function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extraNotes }) {
+  if (!isIntegerDimension(heightCm) || !isIntegerDimension(widthCm)) {
+    throw new Error(
+      "Mobile size-guide image generation requires exact integer heightCm and widthCm values."
+    );
+  }
+
+  return [
+    `Create a new mobile-first product size guide image for "${title}" based on the existing Forever Flowers product images.`,
+    "Output requirements:",
+    "- Square canvas: 1600x1600 px.",
+    "- The entire image must be visible and readable inside a Shopify mobile PDP gallery without zooming.",
+    "- Keep all important content inside a central safe area with at least 160 px margin on every side.",
+    "- Use a clean warm off-white / beige background.",
+    "- Keep the product centered and fully visible.",
+    "- Preserve the product appearance as accurately as possible.",
+    "- Preserve the exact bouquet, vase, flower count, colors, proportions, and arrangement identity.",
+    "- All bouquets are dried or preserved arrangements, never fresh flowers in water.",
+    "- Do not generate water, liquid, waterlines, condensation, bubbles, submerged stems, or wet stems inside any vase, including clear glass vases.",
+    "- Make the bouquet/vase large, about 55-65% of the canvas height.",
+    "- Use elegant, minimal typography.",
+    "- Use large, readable Hebrew labels only:",
+    `  - גובה ${heightCm} ס״מ`,
+    `  - רוחב ${widthCm} ס״מ`,
+    "- The numbers and labels must be readable on a mobile screen without zoom.",
+    "- Do not add small text.",
+    "- Do not place labels, arrows, or product parts near the image edges.",
+    "- Do not crop anything.",
+    "- Do not change the product colors or shape.",
+    "- Do not add extra decorations.",
+    "- Make it look premium, clean, and suitable for Forever Flowers PDP product gallery.",
+    "Measurement arrow rules:",
+    "- The arrows must measure the actual visible product dimensions, not the canvas.",
+    "- The vertical height arrow must always be on the LEFT side of the product.",
+    "- The horizontal width arrow must always be on the BOTTOM of the product.",
+    "- Keep this layout uniform across all products: height on the left, width on the bottom.",
+    "- The vertical height arrow should start at the lowest visible point of the vase/base and end at the highest visible flower/branch.",
+    "- The horizontal width arrow should start at the leftmost visible edge of the arrangement and end at the rightmost visible edge of the arrangement.",
+    "- Do not create full-length ruler lines along the side or bottom of the image.",
+    "- The arrows should sit close to the product, with small gaps, so it is visually clear what they are measuring.",
+    "- Arrow endpoints must align with the product edges they measure.",
+    "Use these exact dimensions:",
+    `- Height: ${heightCm} ס״מ`,
+    `- Width: ${widthCm} ס״מ`,
+    extraNotes ? `Operator notes: ${extraNotes}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildMobileSizeGuideOnlyPlan(existingProduct, input) {
+  return {
+    title: existingProduct.title || existingProduct.handle || "the product",
+    descriptionHtml: "",
+    seoTitle: "",
+    seoDescription: "",
+    tags: [],
+    imageDirectives: [
+      {
+        slot: "mobile-size-guide",
+        prompt: buildMobileFirstHebrewSizeGuidePrompt({
+          title: existingProduct.title || existingProduct.handle || "the product",
+          heightCm: input.heightCm,
+          widthCm: input.widthCm,
+          extraNotes: input.extraNotes
+        })
+      }
+    ]
+  };
+}
+
 function buildImageAppendImagePlan(existingProduct, input) {
   const title = existingProduct.title || existingProduct.handle || "the product";
   const dimensions =
@@ -680,6 +813,104 @@ async function generateBulkExistingImageAppendBatch({ config, input, sessionId, 
       requested: input.bulkExistingProductReferences.length,
       generated: items.filter((item) => !item.error).length,
       failed: items.filter((item) => item.error).length
+    }
+  };
+}
+
+async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId, folders }) {
+  const discovery = await fetchActiveProductsByCollectionHandles(
+    config,
+    input.bulkCollectionHandles
+  );
+  const discoveredProducts = discovery.products ?? [];
+
+  if (!discoveredProducts.length) {
+    throw new Error("No active products found in the selected collections.");
+  }
+
+  if (discoveredProducts.length > MAX_BULK_SIZE_GUIDE_PRODUCTS) {
+    throw new Error(
+      `Bulk size-guide mode found ${discoveredProducts.length} active products; limit is ${MAX_BULK_SIZE_GUIDE_PRODUCTS} per run.`
+    );
+  }
+
+  const items = [];
+
+  for (const [index, existingProduct] of discoveredProducts.entries()) {
+    const itemKey = `${index + 1}-${slugifyValue(existingProduct.handle || existingProduct.id)}`;
+
+    try {
+      const hydratedInput = hydrateSizeGuideInputFromExistingProduct(input, existingProduct);
+      const itemUploadsDir = await ensureNestedFolders(
+        folders.uploadsDir,
+        itemKey
+      );
+      const itemGeneratedDir = await ensureNestedFolders(
+        folders.generatedDir,
+        itemKey
+      );
+      const imageFiles = await persistExistingProductImages(
+        itemUploadsDir,
+        existingProduct
+      );
+      const copyPlan = buildMobileSizeGuideOnlyPlan(existingProduct, hydratedInput);
+      const generatedImages = await generateImagesForPlan({
+        config,
+        providers: input.imageProviders,
+        copyPlan,
+        imageFiles,
+        generatedDir: itemGeneratedDir,
+        sessionId,
+        filenamePrefix: itemKey,
+        imageRatio: "1:1",
+        heightCm: hydratedInput.heightCm,
+        widthCm: hydratedInput.widthCm
+      });
+
+      items.push({
+        itemKey,
+        reference: existingProduct.handle,
+        existingProduct,
+        copyPlans: {},
+        selectedCopyProvider: "",
+        generatedImages,
+        draftPayload: {
+          mode: "bulk-collection-size-guides",
+          writeAction: "review-only",
+          existingProductId: existingProduct.id,
+          existingProductHandle: existingProduct.handle,
+          title: existingProduct.title,
+          heightCm: hydratedInput.heightCm,
+          widthCm: hydratedInput.widthCm,
+          media: []
+        }
+      });
+    } catch (error) {
+      items.push({
+        itemKey,
+        reference: existingProduct.handle || existingProduct.id,
+        existingProduct: {
+          id: existingProduct.id,
+          title: existingProduct.title,
+          handle: existingProduct.handle,
+          status: existingProduct.status
+        },
+        error: error.message
+      });
+    }
+  }
+
+  return {
+    mode: "bulk-collection-size-guides",
+    batchItems: items,
+    summary: {
+      mode: "bulk-collection-size-guides",
+      collections: discovery.collections,
+      requestedCollections: input.bulkCollectionHandles,
+      discoveredActiveProducts: discoveredProducts.length,
+      generated: items.filter((item) => !item.error).length,
+      failed: items.filter((item) => item.error).length,
+      note: "Review-only. No Shopify media upload is performed by this mode."
     }
   };
 }
@@ -991,6 +1222,19 @@ app.post("/api/generate", upload.array("images", MAX_SOURCE_IMAGES), async (req,
       res.json({
         sessionId,
         ...(await generateBulkExistingImageAppendBatch({
+          config,
+          input,
+          sessionId,
+          folders
+        }))
+      });
+      return;
+    }
+
+    if (input.mode === "bulk-collection-size-guides") {
+      res.json({
+        sessionId,
+        ...(await generateBulkCollectionSizeGuidesBatch({
           config,
           input,
           sessionId,
