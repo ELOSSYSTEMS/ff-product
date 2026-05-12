@@ -36,6 +36,14 @@ function isInHomeSlot(slot) {
   return String(slot ?? "").startsWith("in-home");
 }
 
+function isSizeGuideSlot(slot) {
+  return ["size-guide", "mobile-size-guide"].includes(String(slot ?? ""));
+}
+
+function isMobileSizeGuideSlot(slot) {
+  return String(slot ?? "") === "mobile-size-guide";
+}
+
 function isIntegerDimension(value) {
   return Number.isInteger(value) && value > 0;
 }
@@ -165,23 +173,37 @@ export async function validateGeminiDerivedImage(
   { slot, prompt, imageFiles, generatedBytes, heightCm, widthCm }
 ) {
   ensureGeminiKey(config);
-  if (slot === "size-guide") {
+  if (isSizeGuideSlot(slot)) {
     assertSizeGuideDimensions(heightCm, widthCm);
   }
 
   const sizeGuideValidationRules =
-    slot === "size-guide"
+    isSizeGuideSlot(slot)
       ? [
           "- because this is a size-guide image, fail if it is not a clean PDP catalog measurement graphic",
           "- fail if the product is not centered, fully visible, and shown with generous clean space around it",
           "- fail if the vertical height guide is missing",
           "- fail if the horizontal width guide is missing",
-          `- fail unless the height label is present, legible, and exactly "height ${heightCm} cm"`,
-          `- fail unless the width label is present, legible, and exactly "width ${widthCm} cm"`,
+          isMobileSizeGuideSlot(slot)
+            ? `- fail unless the height label is present, legible Hebrew, and exactly "גובה ${heightCm} ס״מ"`
+            : `- fail unless the height label is present, legible, and exactly "height ${heightCm} cm"`,
+          isMobileSizeGuideSlot(slot)
+            ? `- fail unless the width label is present, legible Hebrew, and exactly "רוחב ${widthCm} ס״מ"`
+            : `- fail unless the width label is present, legible, and exactly "width ${widthCm} cm"`,
+          isMobileSizeGuideSlot(slot)
+            ? "- fail if any English labels, small explanatory text, or extra text appears"
+            : "",
+          isMobileSizeGuideSlot(slot)
+            ? "- fail if important content is too close to the image edges or would be hard to read in a Shopify mobile PDP gallery"
+            : "",
+          isMobileSizeGuideSlot(slot)
+            ? "- fail if the vertical height arrow is not on the left side of the product or the horizontal width arrow is not below the product"
+            : "",
           "- fail if cm labels are missing, wrong, rounded, swapped, invented, approximate, illegible, or inconsistent with the provided dimensions",
           "- fail if rulers, measuring tapes, yardsticks, sticky notes, handwritten notes, acrylic blocks, plaques, cameras, books, hands, people, props, comparison objects, room clutter, lifestyle decor, or real-world scale objects appear",
           "- fail if the scene reads as a lifestyle scale scene instead of a clean PDP catalog measurement graphic"
         ]
+          .filter(Boolean)
       : [];
 
   const response = await fetch(

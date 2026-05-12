@@ -193,6 +193,67 @@ const PRODUCT_BY_HANDLE_QUERY = `
   }
 `;
 
+const COLLECTION_PRODUCTS_BY_HANDLE_QUERY = `
+  query CollectionProductsByHandle($handle: String!, $first: Int!, $after: String) {
+    collectionByHandle(handle: $handle) {
+      id
+      title
+      handle
+      products(first: $first, after: $after, sortKey: TITLE) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          title
+          handle
+          status
+          vendor
+          productType
+          templateSuffix
+          tags
+          seo {
+            title
+            description
+          }
+          variants(first: 20) {
+            nodes {
+              title
+              price
+              compareAtPrice
+            }
+          }
+          metafields(first: 50, namespace: "custom") {
+            nodes {
+              namespace
+              key
+              type
+              value
+            }
+          }
+          media(first: 20) {
+            nodes {
+              mediaContentType
+              ... on MediaImage {
+                id
+                alt
+                originalSource {
+                  url
+                  fileSize
+                }
+                image {
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 const PRODUCT_DUPLICATE_MUTATION = `
   mutation DuplicateProduct($productId: ID!, $newTitle: String!, $newStatus: ProductStatus) {
     productDuplicate(
@@ -1014,6 +1075,83 @@ export async function fetchProductByReference(config, reference) {
   }
 
   return product;
+}
+
+export async function fetchActiveProductsByCollectionHandles(config, handles) {
+  const normalizedHandles = [...new Set(
+    (handles ?? [])
+      .map((handle) => String(handle ?? "").trim().replace(/^\/+|\/+$/g, ""))
+      .filter(Boolean)
+  )];
+
+  if (!normalizedHandles.length) {
+    throw new Error("Enter at least one collection handle.");
+  }
+
+  const collections = [];
+  const productsById = new Map();
+
+  for (const handle of normalizedHandles) {
+    let after = null;
+    let collectionSummary = null;
+    let totalProducts = 0;
+    let activeProducts = 0;
+
+    for (let page = 0; page < 20; page += 1) {
+      const data = await shopifyGraphql(config, COLLECTION_PRODUCTS_BY_HANDLE_QUERY, {
+        handle,
+        first: 100,
+        after
+      });
+
+      const collection = data.collectionByHandle;
+      if (!collection) {
+        throw new Error(`No Shopify collection found for handle "${handle}".`);
+      }
+
+      collectionSummary ??= {
+        id: collection.id,
+        title: collection.title,
+        handle: collection.handle
+      };
+
+      const connection = collection.products;
+      for (const product of connection.nodes ?? []) {
+        totalProducts += 1;
+        if (product.status !== "ACTIVE") {
+          continue;
+        }
+
+        activeProducts += 1;
+        const existing = productsById.get(product.id);
+        productsById.set(product.id, {
+          ...product,
+          collectionHandles: [
+            ...new Set([...(existing?.collectionHandles ?? []), collection.handle])
+          ]
+        });
+      }
+
+      if (!connection.pageInfo?.hasNextPage || !connection.pageInfo?.endCursor) {
+        break;
+      }
+
+      after = connection.pageInfo.endCursor;
+    }
+
+    collections.push({
+      ...collectionSummary,
+      totalProducts,
+      activeProducts
+    });
+  }
+
+  return {
+    collections,
+    products: [...productsById.values()].sort((left, right) =>
+      String(left.title ?? "").localeCompare(String(right.title ?? ""), "he")
+    )
+  };
 }
 
 export async function fetchAdminProductSample(config, first = 5) {

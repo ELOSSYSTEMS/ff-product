@@ -49,6 +49,7 @@
               <option value="existing-duplicate">Existing Product: Duplicate &amp; Rebuild</option>
               <option value="bulk-existing-duplicate">Bulk Existing Products: Duplicate &amp; Rebuild</option>
               <option value="bulk-existing-image-append">Bulk Existing Products: Add Images Only</option>
+              <option value="bulk-collection-size-guides">Bulk Collections: Mobile Size Guides</option>
             </select>
           </label>
 
@@ -100,6 +101,17 @@
               placeholder="One product handle or ID per line&#10;eternal-color&#10;9133866221806"
             ></textarea>
             <small>Required for bulk mode. Enter up to 5 products, one per line.</small>
+          </label>
+
+          <label class="field field-wide hidden" id="bulk-collection-handles-field">
+            <span>Collection Handles or URLs</span>
+            <textarea
+              name="bulkCollectionHandles"
+              id="bulkCollectionHandles"
+              rows="3"
+              placeholder="One or two collection handles or URLs&#10;sets&#10;arrangements"
+            ></textarea>
+            <small>Bulk size-guide mode scans ACTIVE products in up to two Shopify collections and generates one square Hebrew mobile size guide for each.</small>
           </label>
 
           <label class="field">

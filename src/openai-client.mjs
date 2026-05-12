@@ -429,14 +429,24 @@ export function buildImageRetryPrompt(
   }
 
   const slotSpecificRules = [];
-  if (slot === "size-guide") {
+  if (["size-guide", "mobile-size-guide"].includes(slot)) {
     assertSizeGuideDimensions(heightCm, widthCm);
+    const isMobileSizeGuide = slot === "mobile-size-guide";
     slotSpecificRules.push(
       "Keep the same exact bouquet and vase identity.",
       "Preserve the exact dimensions.",
-      `Use exactly "${heightCm} cm" for height and "${widthCm} cm" for width.`,
-      `The height label must read exactly "height ${heightCm} cm".`,
-      `The width label must read exactly "width ${widthCm} cm".`,
+      isMobileSizeGuide
+        ? `Use exactly "גובה ${heightCm} ס״מ" for height and "רוחב ${widthCm} ס״מ" for width.`
+        : `Use exactly "${heightCm} cm" for height and "${widthCm} cm" for width.`,
+      isMobileSizeGuide
+        ? `The height label must read exactly "גובה ${heightCm} ס״מ".`
+        : `The height label must read exactly "height ${heightCm} cm".`,
+      isMobileSizeGuide
+        ? `The width label must read exactly "רוחב ${widthCm} ס״מ".`
+        : `The width label must read exactly "width ${widthCm} cm".`,
+      isMobileSizeGuide
+        ? "Keep the square mobile PDP-safe layout: height arrow left, width arrow bottom, large readable Hebrew only."
+        : "",
       "Fix only measurement graphic, layout, or label issues.",
       "Do not change bouquet shape, vase, flower count, product scale, or arrangement identity.",
       "Do not add props or lifestyle context."

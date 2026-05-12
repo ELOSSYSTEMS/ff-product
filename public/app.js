@@ -22,6 +22,10 @@ const bulkExistingProductReferencesField = document.querySelector(
 const bulkExistingProductReferencesInput = document.querySelector(
   "#bulkExistingProductReferences"
 );
+const bulkCollectionHandlesField = document.querySelector(
+  "#bulk-collection-handles-field"
+);
+const bulkCollectionHandlesInput = document.querySelector("#bulkCollectionHandles");
 const existingProductSummaryNode = document.querySelector(
   "#existing-product-summary"
 );
@@ -383,6 +387,7 @@ function renderBatchReview(items) {
                                 <img src="${image.url}" alt="${escapeHtml(image.slot)} ${escapeHtml(image.provider)}">
                                 <figcaption>
                                   <strong>${escapeHtml(image.slot)}</strong>
+                                  <a href="${escapeHtml(image.url)}" target="_blank" rel="noreferrer">Open image</a>
                                   ${renderValidationWarning(image)}
                                   <span>${escapeHtml(image.prompt)}</span>
                                 </figcaption>
@@ -484,14 +489,22 @@ function updateModeUI() {
   const isExistingMode = modeField.value !== "new";
   const isAppendMode = modeField.value === "existing-append";
   const isBulkImageAppendMode = modeField.value === "bulk-existing-image-append";
+  const isBulkCollectionSizeGuideMode = modeField.value === "bulk-collection-size-guides";
   const isBulkMode =
-    modeField.value === "bulk-existing-duplicate" || isBulkImageAppendMode;
+    modeField.value === "bulk-existing-duplicate" ||
+    isBulkImageAppendMode ||
+    isBulkCollectionSizeGuideMode;
   existingProductReferenceField.classList.toggle("hidden", isBulkMode || !isExistingMode);
-  bulkExistingProductReferencesField.classList.toggle("hidden", !isBulkMode);
+  bulkExistingProductReferencesField.classList.toggle(
+    "hidden",
+    !isBulkMode || isBulkCollectionSizeGuideMode
+  );
+  bulkCollectionHandlesField.classList.toggle("hidden", !isBulkCollectionSizeGuideMode);
   newProductStatusField.classList.toggle("hidden", isExistingMode);
   newProductStatusInput.disabled = isExistingMode;
   existingProductReferenceInput.required = isExistingMode && !isBulkMode;
-  bulkExistingProductReferencesInput.required = isBulkMode;
+  bulkExistingProductReferencesInput.required = isBulkMode && !isBulkCollectionSizeGuideMode;
+  bulkCollectionHandlesInput.required = isBulkCollectionSizeGuideMode;
   imageRatioInput.required = true;
   imagesInput.required = !isExistingMode;
   imagesInput.disabled = isBulkMode;
@@ -504,7 +517,9 @@ function updateModeUI() {
   heightInput.disabled = isExistingMode;
   widthInput.disabled = isExistingMode;
   imagesHelp.textContent = isBulkMode
-    ? "Bulk mode uses the original Shopify Admin images from each product."
+    ? isBulkCollectionSizeGuideMode
+      ? "Collection size-guide mode scans active Shopify products and uses each product's original Admin images."
+      : "Bulk mode uses the original Shopify Admin images from each product."
     : isExistingMode
     ? "Optional. If omitted, the app uses the product's original Shopify Admin images."
     : "Upload 1-6 bouquet photos.";
@@ -512,10 +527,12 @@ function updateModeUI() {
   priceHelp.classList.toggle("hidden", !isExistingMode);
   heightHelp.classList.toggle("hidden", !isExistingMode);
   widthHelp.classList.toggle("hidden", !isExistingMode);
-  createDraftButton.classList.toggle("hidden", isAppendMode);
+  createDraftButton.classList.toggle("hidden", isAppendMode || isBulkCollectionSizeGuideMode);
   overwriteExistingButton.classList.toggle("hidden", !isAppendMode);
   createDraftButton.textContent = isBulkMode
-    ? isBulkImageAppendMode
+    ? isBulkCollectionSizeGuideMode
+      ? "Review Generated Size Guides"
+      : isBulkImageAppendMode
       ? "Add Selected Images to Existing Products"
       : "Create Selected Drafts"
     : "Create Product";
@@ -808,7 +825,9 @@ form.addEventListener("submit", async (event) => {
       renderExistingProductSummary(null);
       payloadOutput.textContent = JSON.stringify(result.summary ?? { batchItems: result.batchItems.length }, null, 2);
       imageGrid.textContent =
-        latestBatchMode === "bulk-existing-image-append"
+        latestBatchMode === "bulk-collection-size-guides"
+          ? "Collection size-guide mode uses the review cards below. No Shopify upload action is enabled for this mode. Open or save the approved images from the cards."
+          : latestBatchMode === "bulk-existing-image-append"
           ? "Image append mode uses the review cards below. Approved images will be added to the existing product galleries only."
           : "Batch mode uses the review cards below for per-product image selection.";
       imageGrid.classList.add("empty-state");
