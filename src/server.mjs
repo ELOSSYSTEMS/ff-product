@@ -241,6 +241,10 @@ async function generateImageWithProvider(config, provider, prompt, imageFiles, i
   throw new Error(`Unsupported image provider "${provider}".`);
 }
 
+function isSizeGuideSlot(slot) {
+  return ["size-guide", "mobile-size-guide"].includes(String(slot ?? ""));
+}
+
 async function generateCopyWithProvider(config, provider, input) {
   if (provider === "openai") {
     return generateCopyPlan(config, input);
@@ -465,6 +469,7 @@ async function generateImagesForPlan({
 
   for (const provider of providers) {
     for (const directive of copyPlan.imageDirectives ?? []) {
+      const directiveImageRatio = isSizeGuideSlot(directive.slot) ? "1:1" : imageRatio;
       let validationIssues = [];
       let finalPrompt = directive.prompt;
       let saved = null;
@@ -491,7 +496,7 @@ async function generateImagesForPlan({
           provider,
           finalPrompt,
           imageFiles,
-          imageRatio
+          directiveImageRatio
         );
         lastBytes = bytes;
         const validation = await validateGeminiDerivedImage(config, {
@@ -542,7 +547,7 @@ async function generateImagesForPlan({
       generatedImages.push({
         provider,
         slot: directive.slot,
-        imageRatio,
+        imageRatio: directiveImageRatio,
         prompt: finalPrompt,
         validationPassed,
         approvedForUpload: validationPassed,
@@ -575,27 +580,19 @@ function isIntegerDimension(value) {
   return Number.isInteger(value) && value > 0;
 }
 
-function buildCleanSizeGuidePrompt(baseRules, { heightCm, widthCm }) {
+function buildCleanSizeGuidePrompt({ title, heightCm, widthCm, extraNotes }) {
   if (!isIntegerDimension(heightCm) || !isIntegerDimension(widthCm)) {
     throw new Error(
       "Size-guide image generation requires exact integer heightCm and widthCm values."
     );
   }
 
-  return [
-    baseRules,
-    "Create a size-guide PDP image as a clean catalog measurement graphic, not a lifestyle scale scene.",
-    "Use a plain neutral wall or seamless light background and a simple plain tabletop or surface.",
-    "Show the product centered and fully visible with generous clean space around it.",
-    "Add only thin dark-gray technical measurement lines with small end ticks.",
-    "Show exactly one vertical height guide and exactly one horizontal width guide.",
-    `Use exactly the height label "height ${heightCm} cm" beside the vertical height guide.`,
-    `Use exactly the width label "width ${widthCm} cm" beside the horizontal width guide.`,
-    "Do not invent, round, swap, approximate, reinterpret, or add any other measurement values.",
-    "Do not add physical rulers, measuring tapes, yardsticks, sticky notes, handwritten notes, acrylic blocks, plaques, cameras, books, hands, people, props, comparison objects, room clutter, or lifestyle decor.",
-    "Do not use glass measurement blocks or real-world scale objects.",
-    "If the product has true size variants, show the variants in the same clean measurement style; otherwise show only one centered product."
-  ].join(" ");
+  return buildMobileFirstHebrewSizeGuidePrompt({
+    title,
+    heightCm,
+    widthCm,
+    extraNotes
+  });
 }
 
 function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extraNotes }) {
@@ -712,9 +709,11 @@ function buildImageAppendImagePlan(existingProduct, input) {
       },
       {
         slot: "size-guide",
-        prompt: buildCleanSizeGuidePrompt(baseRules, {
+        prompt: buildCleanSizeGuidePrompt({
+          title,
           heightCm: input.heightCm,
-          widthCm: input.widthCm
+          widthCm: input.widthCm,
+          extraNotes: input.extraNotes
         })
       },
       {

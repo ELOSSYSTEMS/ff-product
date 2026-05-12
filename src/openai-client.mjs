@@ -142,24 +142,67 @@ function buildSeoDescription(title, heightCm, widthCm) {
   return `${normalizeWhitespace(title)} מעוצב מפרחים אמיתיים מיובשים לבית, לעסק או למתנה. מידת הסידור: ${heightCm}×${widthCm} ס״מ. ללא מים או תחזוקה, נשאר יפה לאורך זמן ומשתנה בעדינות באופן טבעי.`;
 }
 
-function buildExactSizeGuideRules(heightCm, widthCm) {
+function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extraNotes }) {
   assertSizeGuideDimensions(heightCm, widthCm);
 
   return [
-    `Use exactly the height label "height ${heightCm} cm" beside one vertical height guide.`,
-    `Use exactly the width label "width ${widthCm} cm" beside one horizontal width guide.`,
-    "The vertical guide must measure product height and the horizontal guide must measure product width.",
-    "Do not invent, round, swap, approximate, reinterpret, or add any other measurement values.",
-    "Do not use example values or placeholder dimensions."
-  ];
+    `Create a new mobile-first product size guide image for "${normalizeWhitespace(title) || "the product"}" based on the existing Forever Flowers product images.`,
+    "Output requirements:",
+    "- Square canvas: 1600x1600 px.",
+    "- The entire image must be visible and readable inside a Shopify mobile PDP gallery without zooming.",
+    "- Keep all important content inside a central safe area with at least 160 px margin on every side.",
+    "- Use a clean warm off-white / beige background.",
+    "- Keep the product centered and fully visible.",
+    "- Preserve the product appearance as accurately as possible.",
+    "- Preserve the exact bouquet, vase, flower count, colors, proportions, and arrangement identity.",
+    "- All bouquets are dried or preserved arrangements, never fresh flowers in water.",
+    "- Do not generate water, liquid, waterlines, condensation, bubbles, submerged stems, or wet stems inside any vase, including clear glass vases.",
+    "- Make the bouquet/vase large, about 55-65% of the canvas height.",
+    "- Use elegant, minimal typography.",
+    "- Use large, readable Hebrew labels only:",
+    `  - גובה ${heightCm} ס״מ`,
+    `  - רוחב ${widthCm} ס״מ`,
+    "- The numbers and labels must be readable on a mobile screen without zoom.",
+    "- Do not add small text.",
+    "- Do not place labels, arrows, or product parts near the image edges.",
+    "- Do not crop anything.",
+    "- Do not change the product colors or shape.",
+    "- Do not add extra decorations.",
+    "- Make it look premium, clean, and suitable for Forever Flowers PDP product gallery.",
+    "Measurement arrow rules:",
+    "- The arrows must measure the actual visible product dimensions, not the canvas.",
+    "- The vertical height arrow must always be on the LEFT side of the product.",
+    "- The horizontal width arrow must always be on the BOTTOM of the product.",
+    "- Keep this layout uniform across all products: height on the left, width on the bottom.",
+    "- The vertical height arrow should start at the lowest visible point of the vase/base and end at the highest visible flower/branch.",
+    "- The horizontal width arrow should start at the leftmost visible edge of the arrangement and end at the rightmost visible edge of the arrangement.",
+    "- Do not create full-length ruler lines along the side or bottom of the image.",
+    "- The arrows should sit close to the product, with small gaps, so it is visually clear what they are measuring.",
+    "- Arrow endpoints must align with the product edges they measure.",
+    "Use these exact dimensions:",
+    `- Height: ${heightCm} ס״מ`,
+    `- Width: ${widthCm} ס״מ`,
+    extraNotes ? `Operator notes: ${extraNotes}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function normalizeImageDirectivePrompt(
   slot,
   prompt,
   imageRatio = "3:2",
-  { heightCm, widthCm } = {}
+  { title, heightCm, widthCm, extraNotes } = {}
 ) {
+  if (["size-guide", "mobile-size-guide"].includes(slot)) {
+    return buildMobileFirstHebrewSizeGuidePrompt({
+      title,
+      heightCm,
+      widthCm,
+      extraNotes
+    });
+  }
+
   const base = stripDisallowedDashes(prompt);
   const rules = [
     "Render as true-to-life commercial photography only.",
@@ -179,22 +222,6 @@ function normalizeImageDirectivePrompt(
       "This is a close-up crop, not a reinterpretation.",
       "Keep the exact bouquet and vase identity while only moving closer to show texture and detail.",
       "Do not crop so tightly that the bouquet structure appears different from the source."
-    );
-  }
-
-  if (slot === "size-guide") {
-    const exactSizeGuideRules = buildExactSizeGuideRules(heightCm, widthCm);
-
-    rules.push(
-      "This is a clean catalog measurement graphic, not a lifestyle scale scene.",
-      "Use a plain neutral wall or seamless light background and a simple plain tabletop or surface.",
-      "Show the product centered and fully visible with generous clean space around it.",
-      "Add only thin dark-gray technical measurement lines with small end ticks.",
-      "Show exactly one vertical height guide and exactly one horizontal width guide.",
-      ...exactSizeGuideRules,
-      "Do not add physical rulers, measuring tapes, yardsticks, sticky notes, handwritten notes, acrylic blocks, plaques, cameras, books, hands, people, props, comparison objects, room clutter, or lifestyle decor.",
-      "Do not use glass measurement blocks or real-world scale objects.",
-      "If the product has true size variants, show the variants in the same clean measurement style; otherwise show only one centered product."
     );
   }
 
@@ -256,7 +283,9 @@ export function normalizeCopyPlan(input, copyPlan) {
             input.imageRatio,
             {
               heightCm: input.heightCm,
-              widthCm: input.widthCm
+              widthCm: input.widthCm,
+              title,
+              extraNotes: input.extraNotes
             }
           )
         }))
@@ -322,13 +351,14 @@ export function buildCopyPrompt(input, attempt = 0, rejectedStems = []) {
     "- every product is a dried or preserved arrangement; imageDirectives must forbid water, liquid, waterlines, condensation, bubbles, submerged stems, or wet stems in any vase, including clear glass vases",
     "- if a clear vase is visible, imageDirectives must show dry stems and any source-matching dry filler only, with no water",
     "- imageDirectives prompts must target five outputs: studio, zoomed detail, size guide, in-home scene 1, in-home scene 2",
-    "- the size-guide image prompt must describe a clean catalog measurement graphic like a neutral studio product image, not a lifestyle scene",
-    "- the size-guide image prompt must require thin technical measurement lines, small end ticks, simple cm labels, a plain neutral background, and a plain tabletop or surface",
+    "- the size-guide image prompt must describe a mobile-first square Hebrew PDP size-guide image, not a lifestyle scene",
+    "- the size-guide image prompt must require a 1600x1600 square canvas, warm off-white / beige background, central safe area, and large readable Hebrew labels only",
     isIntegerDimension(input.heightCm) && isIntegerDimension(input.widthCm)
-      ? `- the size-guide image prompt must use exactly these labels: "height ${input.heightCm} cm" and "width ${input.widthCm} cm"; do not invent, round, swap, approximate, or add measurement values`
+      ? `- the size-guide image prompt must use exactly these Hebrew labels: "גובה ${input.heightCm} ס״מ" and "רוחב ${input.widthCm} ס״מ"; do not invent, round, swap, approximate, or add measurement values`
       : "",
-    "- the size-guide image prompt must forbid physical rulers, measuring tapes, yardsticks, sticky notes, handwritten notes, acrylic blocks, plaques, cameras, books, hands, people, props, comparison objects, room clutter, and lifestyle decor",
-    "- for a single product, the size-guide image prompt must show one centered product only; show multiple products only when they are true size variants",
+    "- the size-guide image prompt must place the vertical height arrow on the left side of the product and the horizontal width arrow below the product",
+    "- the size-guide image prompt must forbid English labels, extra small text, physical rulers, measuring tapes, yardsticks, sticky notes, handwritten notes, acrylic blocks, plaques, cameras, books, hands, people, props, comparison objects, room clutter, and lifestyle decor",
+    "- the size-guide image prompt must show one centered product only",
     "- every image prompt must keep the bouquet as the centered focal point",
     "- if the bouquet is placed on a table, shelf, console, or any other surface, it must be centered on that surface",
     "- home lifestyle scenes should usually place the product on a console, dining table, or kitchen island",
@@ -431,22 +461,13 @@ export function buildImageRetryPrompt(
   const slotSpecificRules = [];
   if (["size-guide", "mobile-size-guide"].includes(slot)) {
     assertSizeGuideDimensions(heightCm, widthCm);
-    const isMobileSizeGuide = slot === "mobile-size-guide";
     slotSpecificRules.push(
       "Keep the same exact bouquet and vase identity.",
       "Preserve the exact dimensions.",
-      isMobileSizeGuide
-        ? `Use exactly "גובה ${heightCm} ס״מ" for height and "רוחב ${widthCm} ס״מ" for width.`
-        : `Use exactly "${heightCm} cm" for height and "${widthCm} cm" for width.`,
-      isMobileSizeGuide
-        ? `The height label must read exactly "גובה ${heightCm} ס״מ".`
-        : `The height label must read exactly "height ${heightCm} cm".`,
-      isMobileSizeGuide
-        ? `The width label must read exactly "רוחב ${widthCm} ס״מ".`
-        : `The width label must read exactly "width ${widthCm} cm".`,
-      isMobileSizeGuide
-        ? "Keep the square mobile PDP-safe layout: height arrow left, width arrow bottom, large readable Hebrew only."
-        : "",
+      `Use exactly "גובה ${heightCm} ס״מ" for height and "רוחב ${widthCm} ס״מ" for width.`,
+      `The height label must read exactly "גובה ${heightCm} ס״מ".`,
+      `The width label must read exactly "רוחב ${widthCm} ס״מ".`,
+      "Keep the square mobile PDP-safe layout: height arrow left, width arrow bottom, large readable Hebrew only.",
       "Fix only measurement graphic, layout, or label issues.",
       "Do not change bouquet shape, vase, flower count, product scale, or arrangement identity.",
       "Do not add props or lifestyle context."
