@@ -1,0 +1,24 @@
+{
+  "name": "ff-product",
+  "version": "0.1.0",
+  "description": "Create draft Shopify products from bouquet photos and storefront product patterns.",
+  "skills": "./skills/",
+  "apps": "./.app.json",
+  "interface": {
+    "displayName": "FF Product",
+    "shortDescription": "Bouquet photos to Shopify draft products",
+    "longDescription": "Use Forever Flowers bouquet photos, storefront catalog patterns, and Shopify Admin API access to prepare draft products for review.",
+    "developerName": "Local",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Create a draft Shopify product from 1-3 bouquet photos.",
+      "Analyze the current store catalog and extract PDP defaults.",
+      "Prepare product copy and five image briefs for a bouquet."
+    ],
+    "brandColor": "#7A1F2B"
+  }
+}

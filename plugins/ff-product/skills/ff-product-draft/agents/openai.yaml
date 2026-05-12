@@ -1,0 +1,4 @@
+interface:
+  display_name: "FF Product Draft"
+  short_description: "Turn bouquet photos into Shopify draft products"
+  default_prompt: "Create a draft Shopify product from 1-3 bouquet photos."

@@ -1,0 +1,19 @@
+{
+  "kind": "set",
+  "title": "Example Set Title",
+  "descriptionHtml": "<p>Short intro paragraph.</p><p>Set details, dimensions, shipping, and care.</p>",
+  "vendor": "FOREVER FLOWERS",
+  "price": 500,
+  "heightCm": 40,
+  "widthCm": 35,
+  "tags": [
+    "set",
+    "draft"
+  ],
+  "seo": {
+    "title": "Example Set Title | Forever Flowers",
+    "description": "Draft SEO description for a set."
+  },
+  "media": [],
+  "status": "DRAFT"
+}

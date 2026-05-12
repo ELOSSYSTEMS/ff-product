@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FF Product</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <div class="hero-topbar">
+          <div>
+            <p class="eyebrow">Forever Flowers Draft Builder</p>
+            <p class="hero-kicker">Product imaging, copy comparison, and Shopify draft prep in one workspace.</p>
+          </div>
+          <div class="theme-toggle" role="group" aria-label="Theme mode">
+            <button id="theme-light-button" type="button" class="theme-button">Light</button>
+            <button id="theme-dark-button" type="button" class="theme-button">Dark</button>
+          </div>
+        </div>
+        <h1>Build the product package, compare outputs, then send only the final choices to Shopify.</h1>
+        <p class="lede">
+          Upload source photos or point to an existing product. Generate copy with OpenAI and images with
+          Gemini, review the results, and keep full control over what reaches the listing.
+        </p>
+        <div class="hero-signals" aria-label="workflow signals">
+          <span class="signal-chip">Compare copy</span>
+          <span class="signal-chip">Pick images by slot</span>
+          <span class="signal-chip">Draft-safe workflow</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Input</h2>
+          <span id="config-badge" class="badge">Checking config…</span>
+        </div>
+
+        <form id="generate-form" class="form-grid">
+          <label class="field">
+            <span>Mode</span>
+            <select name="mode" id="mode" required>
+              <option value="new">New Product</option>
+              <option value="existing-append">Existing Product: Append</option>
+              <option value="existing-duplicate">Existing Product: Duplicate &amp; Rebuild</option>
+              <option value="bulk-existing-duplicate">Bulk Existing Products: Duplicate &amp; Rebuild</option>
+              <option value="bulk-existing-image-append">Bulk Existing Products: Add Images Only</option>
+            </select>
+          </label>
+
+          <label class="field" id="new-product-status-field">
+            <span>Product Status</span>
+            <select name="newProductStatus" id="newProductStatus">
+              <option value="DRAFT" selected>Draft</option>
+              <option value="ACTIVE">Active</option>
+            </select>
+            <small>Used only when creating a new product.</small>
+          </label>
+
+          <label class="field">
+            <span>Images</span>
+            <input type="file" name="images" id="images" accept="image/*" multiple required>
+            <small id="images-help">Upload 1-6 bouquet photos.</small>
+          </label>
+
+          <fieldset class="field provider-fieldset">
+            <legend>Generation Engines</legend>
+            <div class="provider-card">
+              <p><strong>Copy:</strong> OpenAI</p>
+              <p><strong>Images:</strong> Gemini</p>
+              <small>Provider routing is fixed for this workflow.</small>
+            </div>
+          </fieldset>
+
+          <label class="field">
+            <span>Image Ratio</span>
+            <select name="imageRatio" id="imageRatio" required>
+              <option value="3:2" selected>3:2 landscape</option>
+              <option value="1:1">1:1 square</option>
+            </select>
+            <small>Choose 1:1 for tall bouquets or 3:2 for wider products and better mobile above-the-fold space.</small>
+          </label>
+
+          <label class="field field-wide hidden" id="existing-product-reference-field">
+            <span>Existing Product Handle or ID</span>
+            <input type="text" name="existingProductReference" id="existingProductReference" placeholder="e.g. eternal-color or gid://shopify/Product/123456789">
+            <small>Required for existing-product modes.</small>
+          </label>
+
+          <label class="field field-wide hidden" id="bulk-existing-product-references-field">
+            <span>Existing Product Handles or IDs</span>
+            <textarea
+              name="bulkExistingProductReferences"
+              id="bulkExistingProductReferences"
+              rows="5"
+              placeholder="One product handle or ID per line&#10;eternal-color&#10;9133866221806"
+            ></textarea>
+            <small>Required for bulk mode. Enter up to 5 products, one per line.</small>
+          </label>
+
+          <label class="field">
+            <span>Kind</span>
+            <select name="kind" id="kind" required>
+              <option value="arrangement">Arrangement</option>
+              <option value="set" selected>Set</option>
+            </select>
+            <small id="kind-help" class="hidden">For existing-product modes, kind is inferred from Shopify.</small>
+          </label>
+
+          <label class="field">
+            <span>Price (NIS)</span>
+            <input type="number" name="price" id="price" min="1" step="1" required>
+            <small id="price-help" class="hidden">For existing-product modes, price is inferred from Shopify variants.</small>
+          </label>
+
+          <label class="field">
+            <span>Height (cm)</span>
+            <input type="number" name="heightCm" id="heightCm" min="1" step="1" required>
+            <small id="height-help" class="hidden">For existing-product modes, height is inferred from custom.height.</small>
+          </label>
+
+          <label class="field">
+            <span>Width (cm)</span>
+            <input type="number" name="widthCm" id="widthCm" min="1" step="1" required>
+            <small id="width-help" class="hidden">For existing-product modes, width is inferred from custom.width.</small>
+          </label>
+
+          <label class="field field-wide">
+            <span>Extra notes (optional)</span>
+            <textarea name="extraNotes" id="extraNotes" rows="4" placeholder="Anything unusual about this product, styling direction, or copy hint."></textarea>
+          </label>
+
+          <div class="actions field-wide">
+            <button id="generate-button" type="submit">Generate Package</button>
+            <button id="create-draft-button" type="button" class="secondary" disabled>Create Product</button>
+            <button id="overwrite-existing-button" type="button" class="secondary hidden" disabled>Overwrite Existing Listing With Selected Images</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel result-panel">
+        <div class="panel-header">
+          <h2>Result</h2>
+          <span id="status" class="status">Idle</span>
+        </div>
+
+        <div id="error" class="error hidden"></div>
+
+        <div id="existing-product-summary" class="result-card hidden"></div>
+
+        <div class="result-grid">
+          <article class="result-card">
+            <h3>Generated Copy</h3>
+            <div id="copy-output" class="editable-copy empty-state">
+              Nothing generated yet.
+            </div>
+          </article>
+
+          <article class="result-card">
+            <h3>Draft Payload / Result</h3>
+            <pre id="payload-output" class="json-output">No payload yet.</pre>
+          </article>
+        </div>
+
+        <article class="result-card">
+          <h3>Generated Images</h3>
+          <p id="image-selection-help" class="selection-help hidden">
+            Select only the images you want to upload. Unselected images are skipped.
+          </p>
+          <div id="image-grid" class="image-grid empty-state">No generated images yet.</div>
+        </article>
+
+        <article id="batch-review-card" class="result-card hidden">
+          <h3>Batch Review</h3>
+          <div id="batch-review-output" class="empty-state">No batch generated yet.</div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>

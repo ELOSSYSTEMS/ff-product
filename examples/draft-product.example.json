@@ -1,0 +1,19 @@
+{
+  "kind": "arrangement",
+  "title": "Example Bouquet Title",
+  "descriptionHtml": "<p>Short intro paragraph.</p><p>Dimensions, shipping, care, and bouquet details.</p>",
+  "vendor": "FOREVER FLOWERS",
+  "price": 280,
+  "heightCm": 60,
+  "widthCm": 40,
+  "tags": [
+    "bouquet",
+    "draft"
+  ],
+  "seo": {
+    "title": "Example Bouquet Title | Forever Flowers",
+    "description": "Draft SEO description."
+  },
+  "media": [],
+  "status": "DRAFT"
+}

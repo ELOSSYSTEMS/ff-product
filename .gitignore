@@ -1,0 +1,16 @@
+.env*
+**/.env*
+!.env.example
+!**/.env.example
+node_modules/
+dist/
+build/
+desktop-dist*/
+generated/
+.agents/
+ff_product_ui_smoke_result.json
+
+# Local extracted/debug copies. The canonical files live in public/ and src/.
+/index.html
+/openai-client.mjs
+/shopify-client.mjs
