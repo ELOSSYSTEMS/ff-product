@@ -298,10 +298,14 @@ async function persistUploads(uploadsDir, files) {
   return persisted;
 }
 
-async function persistExistingProductImages(uploadsDir, existingProduct) {
+async function persistExistingProductImages(
+  uploadsDir,
+  existingProduct,
+  { maxImages = MAX_SOURCE_IMAGES } = {}
+) {
   const mediaImages = (existingProduct.media?.nodes ?? [])
     .filter((node) => node?.mediaContentType === "IMAGE")
-    .slice(0, MAX_SOURCE_IMAGES);
+    .slice(0, maxImages);
   const persisted = [];
   const sessionId = path.basename(path.dirname(uploadsDir));
 
@@ -851,7 +855,8 @@ async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId,
       );
       const imageFiles = await persistExistingProductImages(
         itemUploadsDir,
-        existingProduct
+        existingProduct,
+        { maxImages: 1 }
       );
       const copyPlan = buildMobileSizeGuideOnlyPlan(existingProduct, hydratedInput);
       const generatedImages = await generateImagesForPlan({
