@@ -832,15 +832,12 @@ async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId,
     throw new Error("No active products found in the selected collections.");
   }
 
-  if (discoveredProducts.length > MAX_BULK_SIZE_GUIDE_PRODUCTS) {
-    throw new Error(
-      `Bulk size-guide mode found ${discoveredProducts.length} active products; limit is ${MAX_BULK_SIZE_GUIDE_PRODUCTS} per run.`
-    );
-  }
+  const selectedProducts = discoveredProducts.slice(0, MAX_BULK_SIZE_GUIDE_PRODUCTS);
+  const truncatedCount = Math.max(0, discoveredProducts.length - selectedProducts.length);
 
   const items = [];
 
-  for (const [index, existingProduct] of discoveredProducts.entries()) {
+  for (const [index, existingProduct] of selectedProducts.entries()) {
     const itemKey = `${index + 1}-${slugifyValue(existingProduct.handle || existingProduct.id)}`;
 
     try {
@@ -913,6 +910,8 @@ async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId,
       collections: discovery.collections,
       requestedCollections: input.bulkCollectionHandles,
       discoveredActiveProducts: discoveredProducts.length,
+      processedProducts: selectedProducts.length,
+      truncatedProducts: truncatedCount,
       generated: items.filter((item) => !item.error).length,
       failed: items.filter((item) => item.error).length,
       note: "Review-only. No Shopify media upload is performed by this mode."
