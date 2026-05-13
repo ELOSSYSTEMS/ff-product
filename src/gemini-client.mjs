@@ -53,13 +53,63 @@ function assertSizeGuideDimensions(heightCm, widthCm) {
 }
 
 function sanitizeValidatorResult(rawText) {
-  const parsed = JSON.parse(sanitizeModelJson(rawText));
+  const parsed = JSON.parse(extractFirstJsonObject(sanitizeModelJson(rawText)));
   return {
     passes: Boolean(parsed.passes),
     issues: Array.isArray(parsed.issues)
       ? parsed.issues.map((issue) => normalizeWhitespace(issue)).filter(Boolean)
       : []
   };
+}
+
+function extractFirstJsonObject(rawText) {
+  const text = String(rawText ?? "").trim();
+  if (!text) {
+    throw new Error("Gemini validation returned empty JSON.");
+  }
+
+  const start = text.indexOf("{");
+  if (start < 0) {
+    throw new Error(`Gemini validation did not include a JSON object: ${text.slice(0, 200)}`);
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+
+  throw new Error(`Gemini validation returned incomplete JSON: ${text.slice(0, 200)}`);
 }
 
 function extractTextParts(response) {
