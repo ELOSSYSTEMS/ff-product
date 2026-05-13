@@ -488,7 +488,8 @@ async function generateImagesForPlan({
   filenamePrefix,
   imageRatio = "3:2",
   heightCm,
-  widthCm
+  widthCm,
+  allowValidationWarningUpload = false
 }) {
   const generatedImages = [];
 
@@ -575,7 +576,7 @@ async function generateImagesForPlan({
         imageRatio: directiveImageRatio,
         prompt: finalPrompt,
         validationPassed,
-        approvedForUpload: validationPassed,
+        approvedForUpload: validationPassed || allowValidationWarningUpload,
         validationWarning,
         url: `/generated/${sessionId}/generated/${relativeGeneratedPath}`
       });
@@ -642,7 +643,7 @@ function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extra
     "- Preserve the exact bouquet, vase, flower count, colors, proportions, and arrangement identity.",
     "- All bouquets are dried or preserved arrangements, never fresh flowers in water.",
     "- Do not generate water, liquid, waterlines, condensation, bubbles, submerged stems, or wet stems inside any vase, including clear glass vases.",
-    "- Make the bouquet/vase about 48-56% of the canvas height so there is room for measurement lines and labels.",
+    "- Make the bouquet/vase roughly 45-65% of the canvas height, with enough room for measurement lines and labels.",
     "- Place the product directly on the tabletop surface.",
     "- Do not add trays, wooden risers, plinths, pedestals, blocks, stands, props, decor, hands, books, rulers, or measuring tapes.",
     "- Use elegant, minimal typography.",
@@ -652,7 +653,7 @@ function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extra
     "- The numbers and labels must be readable on a mobile screen without zoom.",
     "- Do not add small text.",
     "- Do not rotate Hebrew text.",
-    "- Do not split Hebrew labels across lines.",
+    "- Hebrew labels may be on one line or split into two clean lines if needed for mobile readability.",
     "- Do not place labels, guide lines, or product parts near the image edges.",
     "- Do not crop anything.",
     "- Do not change the product colors or shape.",
@@ -893,7 +894,8 @@ async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId,
         filenamePrefix: itemKey,
         imageRatio: "1:1",
         heightCm: hydratedInput.heightCm,
-        widthCm: hydratedInput.widthCm
+        widthCm: hydratedInput.widthCm,
+        allowValidationWarningUpload: true
       });
 
       items.push({
@@ -912,6 +914,7 @@ async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId,
           title: existingProduct.title,
           heightCm: hydratedInput.heightCm,
           widthCm: hydratedInput.widthCm,
+          insertMediaAtPosition: 3,
           media: []
         }
       });

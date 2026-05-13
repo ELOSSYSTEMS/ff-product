@@ -369,7 +369,10 @@ function renderBatchReview(items) {
                         .map(
                           (image) => {
                             const approved = isImageApprovedForUpload(image);
-                            const checked = isImageAppend
+                            const selectable = approved || isCollectionSizeGuide;
+                            const checked = isCollectionSizeGuide
+                              ? true
+                              : isImageAppend
                               ? approved
                               : approved && image.provider === firstProvider;
                             return `
@@ -379,13 +382,13 @@ function renderBatchReview(items) {
                                 name="${isImageAppend ? `batch-image-append-choice-${itemKey}` : `batch-slot-choice-${itemKey}-${escapeHtml(slot)}`}"
                                 value="${escapeHtml(image.provider)}::${escapeHtml(image.slot)}"
                                 ${checked ? "checked" : ""}
-                                ${approved ? "" : "disabled"}
+                                ${selectable ? "" : "disabled"}
                               >
                               <figure class="image-card ${ratioClass(image.imageRatio)} ${approved ? "" : "image-card-blocked"}">
                                 <div class="image-select-bar">
                                   <span class="select-indicator" aria-hidden="true"></span>
                                   <span class="select-label-selected">${isImageAppend ? "Selected to add" : "Selected for Shopify"}</span>
-                                  <span class="select-label-idle">${approved ? (isImageAppend ? "Add this image" : "Select this image") : "Blocked from upload"}</span>
+                                  <span class="select-label-idle">${selectable ? (isImageAppend ? "Add this image" : "Select this image") : "Blocked from upload"}</span>
                                   <span class="provider-chip">${escapeHtml(image.provider)}</span>
                                 </div>
                                 <img src="${image.url}" alt="${escapeHtml(image.slot)} ${escapeHtml(image.provider)}">
@@ -652,6 +655,8 @@ function collectEditedBatchPayloads() {
       document.querySelector(
         `input[name="batch-selected-copy-provider-${CSS.escape(itemKey)}"]:checked`
       )?.value || item.selectedCopyProvider || Object.keys(item.copyPlans ?? {})[0];
+    const isCollectionSizeGuide =
+      item.draftPayload?.sourceMode === "bulk-collection-size-guides";
     const isImageAppend = item.draftPayload?.mode === "existing-image-append";
 
     const title = isImageAppend
@@ -700,10 +705,12 @@ function collectEditedBatchPayloads() {
           );
         }
 
-        assertImageApprovedForUpload(
-          selectedImage,
-          `Selected image for ${item.existingProduct?.title || item.reference}`
-        );
+        if (!isCollectionSizeGuide) {
+          assertImageApprovedForUpload(
+            selectedImage,
+            `Selected image for ${item.existingProduct?.title || item.reference}`
+          );
+        }
         return selectedImage;
       });
 

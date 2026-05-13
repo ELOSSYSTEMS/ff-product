@@ -395,6 +395,20 @@ const PRODUCT_CREATE_MEDIA_MUTATION = `
   }
 `;
 
+const PRODUCT_REORDER_MEDIA_MUTATION = `
+  mutation ProductReorderMedia($id: ID!, $moves: [MoveInput!]!) {
+    productReorderMedia(id: $id, moves: $moves) {
+      job {
+        id
+      }
+      mediaUserErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 const PRODUCT_DELETE_MEDIA_MUTATION = `
   mutation ProductDeleteMedia($productId: ID!, $mediaIds: [ID!]!) {
     productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
@@ -866,9 +880,24 @@ async function uploadProductMedia(config, productId, payload) {
       "productCreateMedia"
     );
 
+    const createdMedia = data.productCreateMedia.media ?? [];
+    let reorder = null;
+    if (payload.insertMediaAtPosition && createdMedia.length) {
+      const firstCreatedMediaId = createdMedia[0]?.id;
+      if (firstCreatedMediaId) {
+        reorder = await reorderProductMedia(config, productId, [
+          {
+            id: firstCreatedMediaId,
+            newPosition: String(payload.insertMediaAtPosition - 1)
+          }
+        ]);
+      }
+    }
+
     return {
       skipped: false,
-      media: data.productCreateMedia.media
+      media: createdMedia,
+      reorder
     };
   } catch (error) {
     const message = String(error.message ?? error);
@@ -881,6 +910,27 @@ async function uploadProductMedia(config, productId, payload) {
 
     throw error;
   }
+}
+
+async function reorderProductMedia(config, productId, moves) {
+  const data = await shopifyGraphql(
+    config,
+    PRODUCT_REORDER_MEDIA_MUTATION,
+    {
+      id: productId,
+      moves
+    }
+  );
+
+  ensureNoMediaUserErrors(
+    data.productReorderMedia.mediaUserErrors,
+    "productReorderMedia"
+  );
+
+  return {
+    job: data.productReorderMedia.job,
+    moves
+  };
 }
 
 async function replaceExistingProductMedia(config, productId, payload) {
@@ -1444,7 +1494,8 @@ export async function appendImagesToExistingProduct(config, payload) {
     config,
     payload.existingProductId,
     {
-      media
+      media,
+      insertMediaAtPosition: payload.insertMediaAtPosition ?? null
     }
   );
 

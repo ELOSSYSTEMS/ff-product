@@ -31,7 +31,7 @@ function resolveGeneratedRoot() {
   }
 
   if (app.isPackaged) {
-    return path.join(app.getPath("userData"), "generated");
+    return "C:\\ELoS\\projects\\FF_Product\\generated";
   }
 
   return path.join(appRoot, "generated");
