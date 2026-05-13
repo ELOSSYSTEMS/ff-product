@@ -715,6 +715,10 @@ function collectEditedBatchPayloads() {
       });
 
       if (!selectedMedia.length) {
+        if (isCollectionSizeGuide) {
+          continue;
+        }
+
         throw new Error(
           `Select at least one image for ${item.existingProduct?.title || item.reference}.`
         );
