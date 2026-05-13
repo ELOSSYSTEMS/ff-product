@@ -124,6 +124,16 @@ function isIntegerDimension(value) {
   return Number.isInteger(value) && value > 0;
 }
 
+function containsOutdatedCopyClaim(value) {
+  return /100\s*(days?|ימים|יום)|one hundred days|ארבעה חודשים/i.test(
+    String(value ?? "")
+  );
+}
+
+function filterOutdatedCopyClaims(values) {
+  return (values ?? []).filter((value) => !containsOutdatedCopyClaim(value));
+}
+
 function assertSizeGuideDimensions(heightCm, widthCm) {
   if (!isIntegerDimension(heightCm) || !isIntegerDimension(widthCm)) {
     throw new Error(
@@ -142,6 +152,22 @@ function buildSeoDescription(title, heightCm, widthCm) {
   return `${normalizeWhitespace(title)} מעוצב מפרחים אמיתיים מיובשים לבית, לעסק או למתנה. מידת הסידור: ${heightCm}×${widthCm} ס״מ. ללא מים או תחזוקה, נשאר יפה לאורך זמן ומשתנה בעדינות באופן טבעי.`;
 }
 
+function buildDescriptionHtml(title, heightCm, widthCm, extraNotes) {
+  if (!isIntegerDimension(heightCm) || !isIntegerDimension(widthCm)) {
+    throw new Error(
+      "Description generation requires exact integer heightCm and widthCm values."
+    );
+  }
+
+  const notes = normalizeWhitespace(extraNotes);
+  const notesSentence = notes ? ` פרטים נוספים: ${notes}.` : "";
+
+  return [
+    `<p>${normalizeWhitespace(title)} מעוצב מפרחים אמיתיים מיובשים לבית, לעסק או למתנה. מידת הסידור: ${heightCm}×${widthCm} ס״מ.</p>`,
+    `<p>ללא מים או תחזוקה, נשאר יפה לאורך זמן ומשתנה בעדינות באופן טבעי.${notesSentence}</p>`
+  ].join("");
+}
+
 function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extraNotes }) {
   assertSizeGuideDimensions(heightCm, widthCm);
 
@@ -151,7 +177,9 @@ function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extra
     "- Square canvas: 1600x1600 px.",
     "- The entire image must be visible and readable inside a Shopify mobile PDP gallery without zooming.",
     "- Keep all important content inside a central safe area with at least 160 px margin on every side.",
-    "- Use a clean warm off-white / beige background.",
+    "- Use a minimalist premium studio-shot background, not a blank white canvas.",
+    "- Use a warm off-white / beige studio backdrop with subtle depth, soft natural shadow, and a refined product-surface feeling.",
+    "- Keep the background quiet and minimal so the measurement labels stay readable.",
     "- Keep the product centered and fully visible.",
     "- Preserve the product appearance as accurately as possible.",
     "- Preserve the exact bouquet, vase, flower count, colors, proportions, and arrangement identity.",
@@ -186,6 +214,11 @@ function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extra
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function findDirectivePrompt(imageDirectives, preferredSlots) {
+  const slots = new Set(preferredSlots);
+  return (imageDirectives ?? []).find((directive) => slots.has(directive?.slot))?.prompt ?? "";
 }
 
 function normalizeImageDirectivePrompt(
@@ -234,6 +267,47 @@ function normalizeImageDirectivePrompt(
   return `${base} ${rules.join(" ")}`.trim();
 }
 
+function normalizeImageDirectives(input, title, imageDirectives) {
+  const promptContext = {
+    heightCm: input.heightCm,
+    widthCm: input.widthCm,
+    title,
+    extraNotes: input.extraNotes
+  };
+
+  return [
+    {
+      slot: "size-guide",
+      prompt: normalizeImageDirectivePrompt(
+        "size-guide",
+        findDirectivePrompt(imageDirectives, ["size-guide", "mobile-size-guide"]),
+        input.imageRatio,
+        promptContext
+      )
+    },
+    {
+      slot: "in-home",
+      prompt: normalizeImageDirectivePrompt(
+        "in-home",
+        findDirectivePrompt(imageDirectives, ["in-home", "in-home-1", "in-home-2"]) ||
+          `Create one refined in-home PDP image for "${title}" with the product centered and fully visible in a warm, natural home setting.`,
+        input.imageRatio,
+        promptContext
+      )
+    },
+    {
+      slot: "in-business",
+      prompt: normalizeImageDirectivePrompt(
+        "in-business",
+        findDirectivePrompt(imageDirectives, ["in-business"]) ||
+          `Create one refined in-business PDP image for "${title}" with the product centered and fully visible in a quiet boutique, reception, office, or hospitality setting.`,
+        input.imageRatio,
+        promptContext
+      )
+    }
+  ];
+}
+
 function summarizeValidationIssues(issues) {
   return (issues ?? [])
     .map((issue) => normalizeWhitespace(issue))
@@ -259,6 +333,10 @@ function assertNoForbiddenBrandPhrases(copyPlan, websiteContext) {
       );
     }
   }
+
+  if (containsOutdatedCopyClaim(text)) {
+    throw new Error("Generated copy used outdated 100-day or four-month longevity language.");
+  }
 }
 
 export function normalizeCopyPlan(input, copyPlan) {
@@ -268,28 +346,22 @@ export function normalizeCopyPlan(input, copyPlan) {
   const normalizedPlan = {
     ...copyPlan,
     title,
-    descriptionHtml: stripDisallowedDashes(copyPlan.descriptionHtml),
+    descriptionHtml: buildDescriptionHtml(
+      title,
+      input.heightCm,
+      input.widthCm,
+      input.extraNotes
+    ),
     seoTitle: stripDisallowedDashes(copyPlan.seoTitle),
     seoDescription: buildSeoDescription(title, input.heightCm, input.widthCm),
     tags: Array.isArray(copyPlan.tags)
       ? [...new Set(copyPlan.tags.map((tag) => normalizeWhitespace(tag)).filter(Boolean))]
       : [],
-    imageDirectives: Array.isArray(copyPlan.imageDirectives)
-      ? copyPlan.imageDirectives.map((directive) => ({
-          ...directive,
-          prompt: normalizeImageDirectivePrompt(
-            directive.slot,
-            directive.prompt,
-            input.imageRatio,
-            {
-              heightCm: input.heightCm,
-              widthCm: input.widthCm,
-              title,
-              extraNotes: input.extraNotes
-            }
-          )
-        }))
-      : []
+    imageDirectives: normalizeImageDirectives(
+      input,
+      title,
+      Array.isArray(copyPlan.imageDirectives) ? copyPlan.imageDirectives : []
+    )
   };
 
   const blockedStems = new Set(input.namingContext?.blockedStems ?? []);
@@ -315,33 +387,45 @@ export function buildCopyPrompt(input, attempt = 0, rejectedStems = []) {
     ...rejectedStems
   ].filter(Boolean);
   const inspirationTitles = input.namingContext?.inspirationTitles ?? [];
-  const preferredClaims = input.websiteContext?.preferredClaims ?? [];
+  const preferredClaims = filterOutdatedCopyClaims(
+    input.websiteContext?.preferredClaims ?? []
+  );
   const homepageBrandPhrases = (input.websiteContext?.homepageBrandPhrases ?? [])
-    .map((entry) => entry.phrase);
+    .map((entry) => entry.phrase)
+    .filter((phrase) => !containsOutdatedCopyClaim(phrase));
   const carePhrases = (input.websiteContext?.carePhrases ?? [])
-    .map((entry) => entry.phrase);
-  const forbiddenPhrases = input.websiteContext?.forbiddenPhrases ?? [];
+    .map((entry) => entry.phrase)
+    .filter((phrase) => !containsOutdatedCopyClaim(phrase));
+  const forbiddenPhrases = [
+    ...(input.websiteContext?.forbiddenPhrases ?? []),
+    "100 days",
+    "one hundred days",
+    "100 יום",
+    "100 ימים",
+    "ארבעה חודשים"
+  ];
 
   return [
     "Generate Shopify-ready Hebrew product copy for Forever Flowers from the provided bouquet images.",
     "Return JSON only with this exact shape:",
-    '{"title":"","descriptionHtml":"","seoTitle":"","seoDescription":"","tags":[""],"imageDirectives":[{"slot":"studio","prompt":""},{"slot":"zoomed","prompt":""},{"slot":"size-guide","prompt":""},{"slot":"in-home-1","prompt":""},{"slot":"in-home-2","prompt":""}]}',
+    '{"title":"","descriptionHtml":"","seoTitle":"","seoDescription":"","tags":[""],"imageDirectives":[{"slot":"size-guide","prompt":""},{"slot":"in-home","prompt":""},{"slot":"in-business","prompt":""}]}',
     "Rules:",
     input.fixedTitle
       ? `- title must stay exactly this existing product title: ${input.fixedTitle}`
       : "- title must follow the exact naming format rule for the selected kind",
     "- keep a premium, calm, minimal Forever Flowers tone",
-    "- descriptionHtml must contain exactly 2 paragraphs using <p>...</p><p>...</p>",
-    "- paragraph 1 describes the bouquet or set visually and materially",
-    "- paragraph 2 describes placement and effect in the home",
-    "- if the product has multiple size variants, the description must explicitly reflect that it is available in multiple sizes and must not describe only one size as if it were the only option",
+    "- descriptionHtml must follow the current SEO-template direction: real dried flowers, home/business/gift use, exact dimensions, no water or maintenance, stays beautiful over time and changes gently and naturally",
+    "- do not mention or identify specific flower types in descriptionHtml unless the operator explicitly names those flowers in Extra operator notes",
+    "- do not guess flowers, flower names, botanical names, or material specifics from the image",
+    "- do not use old outdated copy claims such as 100 days, one hundred days, 100 יום, or 100 ימים",
+    "- if the product has multiple size variants, the description must not describe only one size as if it were the only option",
     "- do not use em dashes, en dashes, or long dash punctuation anywhere",
-    "- do not invent care or maintenance language that is not supported by the website context below",
+    "- do not invent care or maintenance language beyond the approved no-water/no-maintenance wording",
     "- do not mention dust, dust cleaning, wiping, brushing, or dust maintenance at all",
     "- seoTitle should be concise and Shopify-ready",
     "- seoDescription should be concise and premium",
-    "- tags must be short Hebrew product tags that reflect flowers, palette, vessel, and material when visible",
-    "- tags should be relevant, specific, and useful for internal merchandising such as ורדים, פאוני, אגרטל קרם",
+    "- tags must be short Hebrew product tags that reflect safe visible attributes such as palette, vessel, product kind, and material only when clear",
+    "- tags should be relevant, specific, and useful for internal merchandising such as אגרטל קרם, פרחים מיובשים, סט מעוצב",
     "- return between 3 and 8 tags only",
     `- ${namingRule}`,
     input.fixedTitle
@@ -350,7 +434,8 @@ export function buildCopyPrompt(input, attempt = 0, rejectedStems = []) {
     "- imageDirectives must preserve the bouquet and vase identity faithfully",
     "- every product is a dried or preserved arrangement; imageDirectives must forbid water, liquid, waterlines, condensation, bubbles, submerged stems, or wet stems in any vase, including clear glass vases",
     "- if a clear vase is visible, imageDirectives must show dry stems and any source-matching dry filler only, with no water",
-    "- imageDirectives prompts must target five outputs: studio, zoomed detail, size guide, in-home scene 1, in-home scene 2",
+    "- imageDirectives prompts must target exactly three outputs: size-guide, in-home, in-business",
+    "- do not create studio or zoomed image directives",
     "- the size-guide image prompt must describe a mobile-first square Hebrew PDP size-guide image, not a lifestyle scene",
     "- the size-guide image prompt must require a 1600x1600 square canvas, warm off-white / beige background, central safe area, and large readable Hebrew labels only",
     isIntegerDimension(input.heightCm) && isIntegerDimension(input.widthCm)
@@ -359,10 +444,11 @@ export function buildCopyPrompt(input, attempt = 0, rejectedStems = []) {
     "- the size-guide image prompt must place the vertical height arrow on the left side of the product and the horizontal width arrow below the product",
     "- the size-guide image prompt must forbid English labels, extra small text, physical rulers, measuring tapes, yardsticks, sticky notes, handwritten notes, acrylic blocks, plaques, cameras, books, hands, people, props, comparison objects, room clutter, and lifestyle decor",
     "- the size-guide image prompt must show one centered product only",
-    "- every image prompt must keep the bouquet as the centered focal point",
+    "- every image prompt must keep the product as the centered focal point",
     "- if the bouquet is placed on a table, shelf, console, or any other surface, it must be centered on that surface",
-    "- home lifestyle scenes should usually place the product on a console, dining table, or kitchen island",
-    "- avoid office, boardroom, conference room, or corporate meeting contexts unless the operator explicitly asks for them",
+    "- the in-home scene should usually place the product on a console, dining table, or kitchen island",
+    "- the in-business scene should place the product in a premium business setting such as a boutique counter, reception area, office shelf, studio, clinic, salon, restaurant, or hospitality space",
+    "- avoid cluttered boardroom or corporate meeting-table contexts",
     "- if kind is arrangement, the description should reflect that it comes with a clear cylindrical glass vase unless the customer chooses otherwise",
     "- if kind is arrangement, do not invent a vase shape other than the clear cylindrical vase unless the source images show something else",
     "- if kind is set, the description must clearly state that the vase is included as one integral product unit",

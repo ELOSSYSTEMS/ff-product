@@ -178,6 +178,7 @@ export async function validateGeminiDerivedImage(
       ? [
           "- because this is a size-guide image, fail if it is not a clean PDP catalog measurement graphic",
           "- fail if the product is not centered, fully visible, and shown with mobile-safe margins",
+          "- fail if the background is a flat blank white canvas instead of a minimalist premium studio-shot backdrop with subtle depth or shadow",
           "- fail if the vertical height arrow is missing or not on the left side of the product",
           "- fail if the horizontal width arrow is missing or not below the product",
           `- fail unless the height label is present, legible Hebrew, and exactly "גובה ${heightCm} ס״מ"`,

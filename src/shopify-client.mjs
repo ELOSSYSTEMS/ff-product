@@ -469,6 +469,10 @@ function formatMoneyValue(value) {
   return Number(value).toFixed(2);
 }
 
+function formatDecimalValue(value) {
+  return Number(value).toFixed(2);
+}
+
 function countValues(items) {
   const counts = new Map();
 
@@ -630,7 +634,22 @@ function normalizeProductMedia(media, payload = {}) {
     : [];
 }
 
+function applyVariantCost(update, cost) {
+  if (cost === null || cost === undefined) {
+    return update;
+  }
+
+  return {
+    ...update,
+    inventoryItem: {
+      cost: formatDecimalValue(cost)
+    }
+  };
+}
+
 function buildVariantUpdates(currentVariants, payload) {
+  const clearCompareAtPrice = payload.clearCompareAtPrice === true;
+
   if (payload.variantPricingPlan?.length) {
     const variantsByTitle = new Map(
       currentVariants.map((variant) => [variant.title, variant])
@@ -644,15 +663,27 @@ function buildVariantUpdates(currentVariants, payload) {
         );
       }
 
-      return {
+      return applyVariantCost({
         id: match.id,
         price: formatMoneyValue(plan.price),
-        compareAtPrice: formatMoneyValue(plan.price)
-      };
+        ...(clearCompareAtPrice ? { compareAtPrice: null } : {})
+      }, plan.cost ?? payload.baseCost);
     });
   }
 
   if (payload.basePrice === null || payload.basePrice === undefined) {
+    if (
+      clearCompareAtPrice ||
+      (payload.baseCost !== null && payload.baseCost !== undefined)
+    ) {
+      return currentVariants.map((variant) =>
+        applyVariantCost({
+          id: variant.id,
+          ...(clearCompareAtPrice ? { compareAtPrice: null } : {})
+        }, payload.baseCost)
+      );
+    }
+
     return [];
   }
 
@@ -663,11 +694,11 @@ function buildVariantUpdates(currentVariants, payload) {
   }
 
   return [
-    {
+    applyVariantCost({
       id: currentVariants[0].id,
       price: formatMoneyValue(payload.basePrice),
-      compareAtPrice: formatMoneyValue(payload.basePrice)
-    }
+      ...(clearCompareAtPrice ? { compareAtPrice: null } : {})
+    }, payload.baseCost)
   ];
 }
 
@@ -973,9 +1004,18 @@ export function normalizeDraftInput(payload) {
     rawBasePrice === null || rawBasePrice === undefined || rawBasePrice === ""
       ? null
       : Number(rawBasePrice);
+  const rawBaseCost = payload.cost ?? payload.baseCost ?? null;
+  const baseCost =
+    rawBaseCost === null || rawBaseCost === undefined || rawBaseCost === ""
+      ? null
+      : Number(rawBaseCost);
 
   if (basePrice !== null && Number.isNaN(basePrice)) {
     throw new Error("Draft product input price must be numeric.");
+  }
+
+  if (baseCost !== null && (Number.isNaN(baseCost) || baseCost < 0)) {
+    throw new Error("Draft product input cost must be zero or a positive number.");
   }
 
   return {
@@ -1004,6 +1044,8 @@ export function normalizeDraftInput(payload) {
     duplicateSourceProductId:
       payload.duplicateSourceProductId ?? profile?.duplicateSourceProductId ?? null,
     basePrice,
+    baseCost,
+    clearCompareAtPrice: payload.clearCompareAtPrice === true,
     variantPricingPlan:
       payload.variantPricingPlan ??
       (profile?.kind === "arrangement" && basePrice !== null
@@ -1011,11 +1053,13 @@ export function normalizeDraftInput(payload) {
             {
               title: "עם אגרטל (שקוף)",
               price: basePrice,
+              cost: baseCost,
               inventoryTarget: payload.inventoryTarget ?? profile.inventoryTarget
             },
             {
               title: "ללא אגרטל",
               price: basePrice - 20,
+              cost: baseCost,
               inventoryTarget: payload.inventoryTarget ?? profile.inventoryTarget
             }
           ]
@@ -1301,7 +1345,10 @@ export async function createDraftProduct(config, payload) {
   const variantUpdate = await updateVariantPrices(
     config,
     duplicatedProduct.id,
-    product
+    {
+      ...product,
+      clearCompareAtPrice: true
+    }
   );
   const inventoryUpdate = await setInventoryQuantities(
     config,
@@ -1433,7 +1480,10 @@ export async function duplicateExistingProductAndRebuild(config, payload) {
   const variantUpdate = await updateVariantPrices(
     config,
     duplicatedProduct.id,
-    product
+    {
+      ...product,
+      clearCompareAtPrice: true
+    }
   );
   const inventoryUpdate = await setInventoryQuantities(
     config,

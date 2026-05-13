@@ -119,9 +119,11 @@ function validateCoreInput(body, files) {
   );
   const kind = String(body.kind ?? "").trim().toLowerCase();
   const rawPrice = String(body.price ?? "").trim();
+  const rawCost = String(body.cost ?? "").trim();
   const rawHeight = String(body.heightCm ?? "").trim();
   const rawWidth = String(body.widthCm ?? "").trim();
   const price = rawPrice === "" ? null : Number(rawPrice);
+  const cost = rawCost === "" ? null : Number(rawCost);
   const heightCm = rawHeight === "" ? null : Number(rawHeight);
   const widthCm = rawWidth === "" ? null : Number(rawWidth);
   const copyProviders =
@@ -209,6 +211,10 @@ function validateCoreInput(body, files) {
     throw new Error("price must be a positive number.");
   }
 
+  if (mode === "new" && (cost === null || Number.isNaN(cost) || cost < 0)) {
+    throw new Error("cost must be zero or a positive number.");
+  }
+
   if (
     mode === "new" &&
     (!Number.isInteger(heightCm) || !Number.isInteger(widthCm))
@@ -227,6 +233,7 @@ function validateCoreInput(body, files) {
     imageRatio,
     newProductStatus: mode === "new" ? newProductStatus : null,
     price,
+    cost,
     heightCm,
     widthCm,
     extraNotes: String(body.extraNotes ?? "").trim()
@@ -314,15 +321,33 @@ async function persistExistingProductImages(
   const sessionId = path.basename(path.dirname(uploadsDir));
 
   for (const [index, media] of mediaImages.entries()) {
-    const sourceUrl = media.originalSource?.url || media.image?.url;
-    if (!sourceUrl) {
+    const sourceUrls = [
+      media.originalSource?.url,
+      media.image?.url
+    ].filter(Boolean);
+    if (!sourceUrls.length) {
       continue;
     }
 
-    const response = await fetch(sourceUrl);
-    if (!response.ok) {
+    let response = null;
+    let lastStatus = "";
+    for (const sourceUrl of sourceUrls) {
+      response = await fetch(sourceUrl, {
+        headers: {
+          Accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5",
+          "User-Agent": "FF-Product/0.1"
+        }
+      });
+      if (response.ok) {
+        break;
+      }
+      lastStatus = `${response.status}`;
+      response = null;
+    }
+
+    if (!response) {
       throw new Error(
-        `Failed to download existing product image ${index + 1}: ${response.status}.`
+        `Failed to download existing product image ${index + 1}: ${lastStatus || "no usable URL"}.`
       );
     }
 
@@ -608,7 +633,9 @@ function buildMobileFirstHebrewSizeGuidePrompt({ title, heightCm, widthCm, extra
     "- Square canvas: 1600x1600 px.",
     "- The entire image must be visible and readable inside a Shopify mobile PDP gallery without zooming.",
     "- Keep all important content inside a central safe area with at least 160 px margin on every side.",
-    "- Use a clean warm off-white / beige background.",
+    "- Use a minimalist premium studio-shot background, not a blank white canvas.",
+    "- Use a warm off-white / beige studio backdrop with subtle depth, soft natural shadow, and a refined product-surface feeling.",
+    "- Keep the background quiet and minimal so the measurement labels stay readable.",
     "- Keep the product centered and fully visible.",
     "- Preserve the product appearance as accurately as possible.",
     "- Preserve the exact bouquet, vase, flower count, colors, proportions, and arrangement identity.",
@@ -700,14 +727,6 @@ function buildImageAppendImagePlan(existingProduct, input) {
     tags: [],
     imageDirectives: [
       {
-        slot: "studio",
-        prompt: `${baseRules} Create a clean studio PDP image with the product centered, full product visible, natural shadow, and a refined neutral background.`
-      },
-      {
-        slot: "zoomed",
-        prompt: `${baseRules} Create a close-up detail PDP image that moves closer to show flower texture and craftsmanship while keeping the product identity unmistakable.`
-      },
-      {
         slot: "size-guide",
         prompt: buildCleanSizeGuidePrompt({
           title,
@@ -717,12 +736,12 @@ function buildImageAppendImagePlan(existingProduct, input) {
         })
       },
       {
-        slot: "in-home-1",
-        prompt: `${baseRules} Create a natural in-home lifestyle PDP image with the product centered on a console, dining table, or kitchen island in a lived-in home setting.`
+        slot: "in-home",
+        prompt: `${baseRules} Create one refined in-home PDP image with the product centered and fully visible on a console, dining table, or kitchen island in a warm, natural home setting.`
       },
       {
-        slot: "in-home-2",
-        prompt: `${baseRules} Create a second distinct natural in-home lifestyle PDP image in a different room angle or surface context, with the product centered and clearly visible.`
+        slot: "in-business",
+        prompt: `${baseRules} Create one refined in-business PDP image with the product centered and fully visible in a premium boutique, reception, office, hospitality, clinic, salon, or restaurant setting.`
       }
     ]
   };
@@ -876,8 +895,9 @@ async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId,
         selectedCopyProvider: "",
         generatedImages,
         draftPayload: {
-          mode: "bulk-collection-size-guides",
-          writeAction: "review-only",
+          mode: "existing-image-append",
+          sourceMode: "bulk-collection-size-guides",
+          writeAction: "append-images-only",
           existingProductId: existingProduct.id,
           existingProductHandle: existingProduct.handle,
           title: existingProduct.title,
@@ -913,7 +933,7 @@ async function generateBulkCollectionSizeGuidesBatch({ config, input, sessionId,
       truncatedProducts: truncatedCount,
       generated: items.filter((item) => !item.error).length,
       failed: items.filter((item) => item.error).length,
-      note: "Review-only. No Shopify media upload is performed by this mode."
+      note: "Review first. After review, selected approved size-guide images can be appended to the existing Shopify products."
     }
   };
 }
@@ -960,6 +980,7 @@ function buildDraftPayload(input, copyPlan) {
       description: copyPlan.seoDescription
     },
     price: input.price,
+    cost: input.cost,
     heightCm: input.heightCm,
     widthCm: input.widthCm,
     status: normalizedMode === "existing-append"
@@ -1273,8 +1294,17 @@ app.post("/api/draft/create-bulk", async (req, res) => {
       throw new Error("Bulk draft creation requires at least one selected item.");
     }
 
-    if (items.length > MAX_BULK_PRODUCTS) {
-      throw new Error(`Bulk draft creation supports at most ${MAX_BULK_PRODUCTS} items.`);
+    const isBulkCollectionSizeGuideUpload = items.every(
+      (item) =>
+        item?.sourceMode === "bulk-collection-size-guides" &&
+        item?.mode === "existing-image-append"
+    );
+    const maxItems = isBulkCollectionSizeGuideUpload
+      ? MAX_BULK_SIZE_GUIDE_PRODUCTS
+      : MAX_BULK_PRODUCTS;
+
+    if (items.length > maxItems) {
+      throw new Error(`Bulk draft creation supports at most ${maxItems} items.`);
     }
 
     const results = [];

@@ -34,10 +34,12 @@ const imagesHelp = document.querySelector("#images-help");
 const imageRatioInput = document.querySelector("#imageRatio");
 const kindInput = document.querySelector("#kind");
 const priceInput = document.querySelector("#price");
+const costInput = document.querySelector("#cost");
 const heightInput = document.querySelector("#heightCm");
 const widthInput = document.querySelector("#widthCm");
 const kindHelp = document.querySelector("#kind-help");
 const priceHelp = document.querySelector("#price-help");
+const costHelp = document.querySelector("#cost-help");
 const heightHelp = document.querySelector("#height-help");
 const widthHelp = document.querySelector("#width-help");
 const imageSelectionHelp = document.querySelector("#image-selection-help");
@@ -262,6 +264,8 @@ function renderBatchReview(items) {
       }
 
       const copyPlans = Object.entries(item.copyPlans ?? {});
+      const isCollectionSizeGuide =
+        item.draftPayload?.sourceMode === "bulk-collection-size-guides";
       const isImageAppend = item.draftPayload?.mode === "existing-image-append";
       const selectedCopyProvider = item.selectedCopyProvider || copyPlans[0]?.[0] || "openai";
       const imagesBySlot = new Map();
@@ -276,7 +280,7 @@ function renderBatchReview(items) {
           <div class="batch-item-topbar">
             <label class="batch-include-toggle">
               <input type="checkbox" id="batch-include-${itemKey}" checked>
-              <span>${isImageAppend ? "Include in image append" : "Include in draft creation"}</span>
+              <span>${isCollectionSizeGuide ? "Include size guide upload" : isImageAppend ? "Include in image append" : "Include in draft creation"}</span>
             </label>
             <div class="batch-meta-group">
               <strong>${escapeHtml(item.existingProduct?.title || item.reference)}</strong>
@@ -358,7 +362,7 @@ function renderBatchReview(items) {
                   <section class="slot-group">
                     <div class="slot-group-header">
                       <h4>${escapeHtml(slot)}</h4>
-                      <small>Select the images that should go to Shopify for this product.</small>
+                      <small>${isCollectionSizeGuide ? "Select the size guide to upload to this Shopify product." : "Select the images that should go to Shopify for this product."}</small>
                     </div>
                     <div class="${slotOptionsClass}">
                       ${slotImages
@@ -510,10 +514,12 @@ function updateModeUI() {
   imagesInput.disabled = isBulkMode;
   kindInput.required = !isExistingMode;
   priceInput.required = !isExistingMode;
+  costInput.required = !isExistingMode;
   heightInput.required = !isExistingMode;
   widthInput.required = !isExistingMode;
   kindInput.disabled = isExistingMode;
   priceInput.disabled = isExistingMode;
+  costInput.disabled = isExistingMode;
   heightInput.disabled = isExistingMode;
   widthInput.disabled = isExistingMode;
   imagesHelp.textContent = isBulkMode
@@ -525,13 +531,14 @@ function updateModeUI() {
     : "Upload 1-6 bouquet photos.";
   kindHelp.classList.toggle("hidden", !isExistingMode);
   priceHelp.classList.toggle("hidden", !isExistingMode);
+  costHelp.classList.toggle("hidden", !isExistingMode);
   heightHelp.classList.toggle("hidden", !isExistingMode);
   widthHelp.classList.toggle("hidden", !isExistingMode);
-  createDraftButton.classList.toggle("hidden", isAppendMode || isBulkCollectionSizeGuideMode);
+  createDraftButton.classList.toggle("hidden", isAppendMode);
   overwriteExistingButton.classList.toggle("hidden", !isAppendMode);
   createDraftButton.textContent = isBulkMode
     ? isBulkCollectionSizeGuideMode
-      ? "Review Generated Size Guides"
+      ? "Upload Selected Size Guides to Shopify"
       : isBulkImageAppendMode
       ? "Add Selected Images to Existing Products"
       : "Create Selected Drafts"
@@ -826,7 +833,7 @@ form.addEventListener("submit", async (event) => {
       payloadOutput.textContent = JSON.stringify(result.summary ?? { batchItems: result.batchItems.length }, null, 2);
       imageGrid.textContent =
         latestBatchMode === "bulk-collection-size-guides"
-          ? "Collection size-guide mode uses the review cards below. No Shopify upload action is enabled for this mode. Open or save the approved images from the cards."
+          ? "Collection size-guide mode uses the review cards below. After review, selected approved size guides can be uploaded to the existing Shopify product galleries."
           : latestBatchMode === "bulk-existing-image-append"
           ? "Image append mode uses the review cards below. Approved images will be added to the existing product galleries only."
           : "Batch mode uses the review cards below for per-product image selection.";
@@ -895,16 +902,27 @@ async function executeWriteAction({ writeAction, replaceExistingMedia, statusTex
 
 createDraftButton.addEventListener("click", async () => {
   const isBulkImageAppend = latestBatchMode === "bulk-existing-image-append";
+  const isBulkCollectionSizeGuides = latestBatchMode === "bulk-collection-size-guides";
   const newProductStatusOverride =
     latestDraftPayload?.mode === "new" ? getSelectedNewProductStatus() : undefined;
   await executeWriteAction({
-    writeAction: isBulkImageAppend ? "append-images-only" : "create-draft",
+    writeAction: isBulkImageAppend || isBulkCollectionSizeGuides ? "append-images-only" : "create-draft",
     replaceExistingMedia: false,
-    statusText: isBulkImageAppend
+    statusText: isBulkCollectionSizeGuides
+      ? "Uploading size guides to Shopify…"
+      : isBulkImageAppend
       ? "Adding images to existing products…"
       : "Creating product…",
-    successText: isBulkImageAppend ? "Images added" : "Product created",
-    failureText: isBulkImageAppend ? "Image append failed" : "Product creation failed",
+    successText: isBulkCollectionSizeGuides
+      ? "Size guides uploaded"
+      : isBulkImageAppend
+      ? "Images added"
+      : "Product created",
+    failureText: isBulkCollectionSizeGuides
+      ? "Size guide upload failed"
+      : isBulkImageAppend
+      ? "Image append failed"
+      : "Product creation failed",
     statusOverride: newProductStatusOverride
   });
 });
